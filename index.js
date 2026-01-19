@@ -1,83 +1,75 @@
 const express = require("express");
-const mongoose = require("mongoose");
-require("dotenv").config();
+const router = express.Router();
+const { Product, Inventory, sequelize } = require("../models");
 
-const app = express();
-app.use(express.json());
+router.post("/api/products", async (req, res) => {
+  const {
+    name,
+    sku,
+    price,
+    warehouse_id,
+    initial_quantity = 0
+  } = req.body;
 
-// MongoDB connection
+  // Input validation
+  if (!name || !sku || !price || !warehouse_id) {
+    return res.status(400).json({
+      message: "Missing required fields"
+    });
+  }
 
-mongoose.connect(process.env.MONGO_URL)
-  .then(() => console.log("MongoDB connected"))
-  .catch(err => console.error(err));
+  // Use transaction to avoid partial writes
+  const transaction = await sequelize.transaction();
 
-// Product schema
-
-const productSchema = new mongoose.Schema({
-  name: { type: String, required: true },
-  sku: { type: String, required: true, unique: true },
-  price: { type: Number, required: true },
-  description: { type: String }
-});
-
-// Inventory schema
-
-const inventorySchema = new mongoose.Schema({
-  product_id: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: "Product",
-    required: true
-  },
-  warehouse_id: { type: String, required: true },
-  quantity: { type: Number, required: true }
-});
-
-const Product = mongoose.model("Product", productSchema);
-const Inventory = mongoose.model("Inventory", inventorySchema);
-
-// API: Create product + inventory
-
-app.post("/api/products", async (req, res) => {
   try {
-    const data = req.body;
+    // Check if SKU already exists
+    const existingProduct = await Product.findOne({ where: { sku } });
 
-    // SKU uniqueness check
-
-    const existing = await Product.findOne({ sku: data.sku });
-    if (existing) {
-      return res.status(409).json({ message: "SKU already exists" });
+    if (existingProduct) {
+      await transaction.rollback();
+      return res.status(409).json({
+        message: "SKU already exists"
+      });
     }
 
     // Create product
+    const product = await Product.create(
+      {
+        name,
+        sku,
+        price: parseFloat(price)
+      },
+      { transaction }
+    );
 
-    const product = await Product.create({
-      name: data.name,
-      sku: data.sku,
-      price: data.price,
-      description: data.description
+    // Create inventory entry
+    await Inventory.create(
+      {
+        product_id: product.id,
+        warehouse_id,
+        quantity: initial_quantity
+      },
+      { transaction }
+    );
+
+    // Commit transaction
+    await transaction.commit();
+
+    return res.status(201).json({
+      message: "Product created successfully",
+      product_id: product.id
     });
 
-    // Create inventory (supports multiple warehouses)
+  } catch (error) {
+    // Rollback on error
+    await transaction.rollback();
 
-    await Inventory.create({
-      product_id: product._id,
-      warehouse_id: data.warehouse_id,
-      quantity: data.initial_quantity
+    console.error(error);
+    return res.status(500).json({
+      message: "Internal server error"
     });
-
-    res.status(201).json({
-      message: "Product created",
-      product_id: product._id
-    });
-
-  } catch (err) {
-    res.status(500).json({ error: err.message });
   }
 });
 
-// Start server
+module.exports = router;
 
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () =>
-  console.log(`Server running on port ${PORT}`)
-);
