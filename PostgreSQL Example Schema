@@ -1,0 +1,57 @@
+CREATE TABLE company (
+  id SERIAL PRIMARY KEY,
+  name TEXT NOT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE warehouse (
+  id SERIAL PRIMARY KEY,
+  company_id INT REFERENCES company(id),
+  name TEXT NOT NULL,
+  location TEXT
+);
+
+CREATE TABLE product (
+  id SERIAL PRIMARY KEY,
+  company_id INT REFERENCES company(id),
+  name TEXT NOT NULL,
+  sku TEXT UNIQUE NOT NULL,
+  price DECIMAL(10,2) NOT NULL,
+  product_type TEXT
+);
+
+CREATE TABLE inventory (
+  id SERIAL PRIMARY KEY,
+  product_id INT REFERENCES product(id),
+  warehouse_id INT REFERENCES warehouse(id),
+  quantity INT NOT NULL DEFAULT 0,
+  UNIQUE (product_id, warehouse_id)
+);
+
+CREATE TABLE supplier (
+  id SERIAL PRIMARY KEY,
+  name TEXT NOT NULL,
+  contact_email TEXT
+);
+
+CREATE TABLE product_supplier (
+  product_id INT REFERENCES product(id),
+  supplier_id INT REFERENCES supplier(id),
+  PRIMARY KEY (product_id, supplier_id)
+);
+
+CREATE TABLE inventory_history (
+  id SERIAL PRIMARY KEY,
+  product_id INT REFERENCES product(id),
+  warehouse_id INT REFERENCES warehouse(id),
+  quantity_change INT,
+  reason TEXT,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE product_bundle (
+  bundle_id INT REFERENCES product(id),
+  child_product_id INT REFERENCES product(id),
+  quantity INT NOT NULL,
+  PRIMARY KEY (bundle_id, child_product_id)
+);
